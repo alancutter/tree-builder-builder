@@ -1,40 +1,63 @@
 var gulp = require('gulp');
-var parseArgs = require('minimist');
 var fs = require('fs');
+var coveralls = require('gulp-coveralls');
+var istanbul = require('gulp-istanbul');
 var mocha = require('gulp-mocha');
 
-// TODO: device and experiment are only loaded so that they can be initialized with options.
-// There must be a nicer way to set options across a project.
-var device = require('./core/device');
-var experiment = require('./core/experiment');
 var stageLoader = require('./core/stage-loader');
-
 var fancyStages = require('./core/fancy-stages');
+// TODO: Where is the correct place to trigger loading of core phases?
+var phaseLib = require('./core/phase-lib');
 var stream = require('./core/stream');
-
-var options = parseArgs(process.argv.slice(2));
-device.init(options);
+var options = require('./core/options');
+var trace = require('./core/trace');
 
 var tasks = {};
 
-function buildTestTask(reporter) {
-  return function() {
-    return gulp.src(['tests/*.js', 'tests/pipeline/*.js'], {read: false})
-        .pipe(mocha({
-          ui: 'bdd',
-          ignoreLeaks: true,
-          reporter: reporter
-      }));
-  };
+function buildTestTask(name, mochaReporter, istanbulReporters) {
+  gulp.task(name, function(cb) {
+    gulp.src(['core/*.js', 'lib/*.js'])
+    .pipe(istanbul())
+    .pipe(istanbul.hookRequire())
+    .on('finish', function() {
+      gulp.src(['tests/*.js', 'tests/pipeline/*.js'])
+      .pipe(mocha({
+        ui: 'bdd',
+        ignoreLeaks: true,
+        reporter: mochaReporter,
+      }))
+      .pipe(istanbul.writeReports({
+        reporters: istanbulReporters,
+      }))
+      .on('end', function() {
+        if (istanbulReporters.indexOf('html') !== -1) {
+          process.stdout.write('Detailed coverage report at file://' + fs.realpathSync('coverage/index.html') + '\n');
+        }
+        if (istanbulReporters.indexOf('lcov') !== -1) {
+          gulp.src('coverage/lcov.info')
+          .pipe(coveralls())
+          .on('error', function(err) {
+            console.warn(err);
+            console.warn('Failed to upload LCOV data to Coveralls.')
+            console.warn('Has this repository been enabled for Coveralls tracking? https://coveralls.io/repos/new');
+          });
+        }
+        cb();
+      });
+    });
+  });
 }
 
-gulp.task('test', buildTestTask('nyan'));
-gulp.task('travis-test', buildTestTask('spec'));
+buildTestTask('test', 'nyan', ['html', 'text-summary']);
+buildTestTask('travis-test', 'spec', ['lcov', 'text', 'text-summary']);
 
 function buildTask(name, stageList) {
   tasks[name] = stageList;
   gulp.task(name, function(incb) {
-    var cb = function(data) { incb(); };
+    var cb = function(data) {
+      trace.dump();
+      incb();
+    };
     stageList = stageList.map(stageLoader.stageSpecificationToStage);
     stageLoader.processStages(stageList, cb, function(e) { throw e; });
   });
@@ -80,9 +103,8 @@ gulp.task('ejs', function(incb) {
   stageLoader.processStages(
     [
       stageLoader.stageSpecificationToStage('file:' + options.file),
-      stageLoader.stageSpecificationToStage('ejs:' + options.outputPrefix),
-      fancyStages.mapToTuples(),
-      fancyStages.map(stageLoader.stageSpecificationToStage('toFile'))
+      stageLoader.stageSpecificationToStage('ejsFabricator'),
+      stageLoader.stageSpecificationToStage('writeStringFile', {tag: 'ejsFabricator'})
     ], cb, function(e) { throw e; });
 });
 
@@ -91,18 +113,6 @@ gulp.task('ejs', function(incb) {
  *
  * example of using stages directly
  */
-gulp.task('mhtml', function(incb) {
-  var cb = function(data) { incb(); };
-  stageLoader.processStages(
-    [
-      fancyStages.fileInputs(options.inputSpec),
-      fancyStages.map(fancyStages.tee()),
-      fancyStages.map(fancyStages.right(stageLoader.stageSpecificationToStage('fileToJSON'))),
-      fancyStages.map(fancyStages.right(stageLoader.stageSpecificationToStage('HTMLWriter'))),
-      fancyStages.map(fancyStages.left(fancyStages.outputName(options.inputSpec, options.outputSpec))),
-      fancyStages.map(stageLoader.stageSpecificationToStage('toFile'))
-    ], cb, function(e) { throw e; });
-});
 
 function tagFilename() {
   return stream.tag(function(data, tags) { return {key: 'filename', value: data} });
@@ -114,15 +124,14 @@ function genFilename() {
     return {key: 'filename', value: filename} });
 }
 
-
-gulp.task('mhtml2', function(incb) {
+gulp.task('mhtml', function(incb) {
   var cb = function(data) { incb(); };
   stageLoader.processStages(
       [
         stream.streamedStage(fancyStages.fileInputs(options.inputSpec)),
         tagFilename(),
-        stream.streamedStage(stageLoader.stageSpecificationToStage('fileToJSON')),
-        stream.streamedStage(stageLoader.stageSpecificationToStage('HTMLWriter')),
+        stageLoader.stageSpecificationToStage('fileToJSON'),
+        stageLoader.stageSpecificationToStage('HTMLWriter'),
         genFilename(),
         stream.write()
       ], cb, function(e) { throw e; });

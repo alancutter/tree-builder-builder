@@ -236,7 +236,7 @@ function streamedStageMap1ToN(stage, id, fromKey, fromValue) {
         return function() {
           stage.impl(data[i].data, function(dataOut) {
             for (key in dataOut) {
-              var tags = data[i].tags;
+              var tags = cloneTags(data[i].tags);
               tags[id == undefined ? stage.name : id] = key;
               result.push({data: dataOut[key], tags: tags});
             }
@@ -308,3 +308,4 @@ module.exports.write = write;
 module.exports.RoutingStage = RoutingStage;
 module.exports.stageWrapper = stageWrapper;
 module.exports.CoreStream = CoreStream;
+module.exports.Stream = Stream;
