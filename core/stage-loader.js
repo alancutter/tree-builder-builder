@@ -33,6 +33,10 @@ function _stageSpecificationToStage(stage, options) {
   assert(false, "No stage found for specification " + stage);
 }
 
+function moarCode() {
+  return 'not covered';
+}
+
 // TODO once everything is a phase, this can be removed.
 function stageSpecificationToStage(stage, options) {
   var stage = _stageSpecificationToStage(stage, options);
