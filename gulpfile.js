@@ -12,7 +12,7 @@ var trace = require('./core/trace');
 var tasks = {};
 
 function runTests(mochaReporter) {
-  return gulp.src(['tests/*.js', 'tests/pipeline/*.js', 'lib/*/tests/*.js'])
+  return gulp.src(['tests/**/*.js', 'lib/*/tests/*.js'])
       .pipe(mocha({
         ui: 'bdd',
         ignoreLeaks: true,
